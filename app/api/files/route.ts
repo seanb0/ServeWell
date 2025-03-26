@@ -1,84 +1,106 @@
 import { NextResponse } from "next/server";
 import pool from "@/app/lib/database";
 
-export async function GET() {
+// Fetch the latest uploaded file based on ministry and page type
+// Fetch all uploaded files based on ministry and page type
+export async function GET(req: Request) {
     let connection;
     try {
-        connection = await pool.getConnection();
+        const { searchParams } = new URL(req.url);
+        const ministry = searchParams.get("ministry");
+        const pageType = searchParams.get("page_type");
 
-        // Fetch the latest uploaded file
+        if (!ministry || !pageType) {
+            return NextResponse.json({ success: false, error: "Ministry and page type are required" }, { status: 400 });
+        }
+
+        connection = await pool.getConnection();
         const [rows] = await connection.execute(
-            "SELECT file_name, file_data, tab_name FROM uploaded_files ORDER BY created_at DESC LIMIT 1"
+            "SELECT file_name, file_data, tab_name FROM uploaded_files WHERE LOWER(ministry) = LOWER(?) AND LOWER(page_type) = LOWER(?) ORDER BY created_at DESC",
+            [ministry, pageType]
         );
 
         connection.release();
 
         if (!rows || rows.length === 0) {
-            console.error("❌ No files found in the database.");
-            return NextResponse.json({ success: false, message: "No file found" });
+            return NextResponse.json({ success: false, message: "No files found" });
         }
 
-        const fileRow = rows[0];
+        // Convert all files into base64 format
+        const files = rows.map((fileRow: any) => ({
+            filename: fileRow.file_name,
+            fileData: Buffer.from(fileRow.file_data).toString("base64"),
+            tabName: fileRow.tab_name,
+        }));
 
-        if (!fileRow.file_data) {
-            console.error("❌ File data is NULL in the database.");
-            return NextResponse.json({ success: false, message: "File data is missing" });
-        }
-
-        const fileData = Buffer.from(fileRow.file_data).toString("base64");
-
-        console.log("📤 Sending file to frontend:", fileRow.file_name, "Tab:", fileRow.tab_name);
-
-        return NextResponse.json({ 
-            success: true, 
-            filename: fileRow.file_name, 
-            fileData, 
-            tabName: fileRow.tab_name 
-        });
+        return NextResponse.json({ success: true, files });
 
     } catch (error) {
         console.error("❌ Fetch error:", error);
-        return NextResponse.json({ success: false, error: "Failed to fetch file" }, { status: 500 });
+        return NextResponse.json({ success: false, error: "Failed to fetch files" }, { status: 500 });
     } finally {
         if (connection) connection.release();
     }
 }
 
+// Upload a new file
 export async function POST(req: Request) {
     let connection;
     try {
         const formData = await req.formData();
         const file = formData.get("file") as File;
-        const tabName = formData.get("tab_name") as string; 
+        const tabName = formData.get("tab_name") as string;
+        const ministry = formData.get("ministry") as string;
+        const pageType = formData.get("page_type") as string;
 
-        if (!file || !tabName) {
-            console.error("❌ Missing file or tab name in request.");
-            return NextResponse.json({ success: false, error: "File and tab name are required" }, { status: 400 });
+        if (!file || !tabName || !ministry || !pageType) {
+            return NextResponse.json({ success: false, error: "File, tab name, ministry, and page type are required" }, { status: 400 });
         }
-
-        console.log("📥 Received file upload request:", file.name, "Tab:", tabName);
 
         const arrayBuffer = await file.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
 
-        console.log("🔄 Converted file to Buffer, size:", buffer.length, "bytes");
-
         connection = await pool.getConnection();
-        
         const [result] = await connection.execute(
-            "INSERT INTO uploaded_files (file_name, file_data, tab_name) VALUES (?, ?, ?)",
-            [file.name, buffer, tabName]
+            "INSERT INTO uploaded_files (file_name, file_data, tab_name, ministry, page_type) VALUES (?, ?, ?, ?, ?)",
+            [file.name, buffer, tabName, ministry, pageType]
         );
-
-        console.log("✅ File successfully stored in database, Insert ID:", result.insertId);
 
         connection.release();
 
-        return NextResponse.json({ success: true, message: "File uploaded successfully" });
+        return NextResponse.json({ success: true, id: result.insertId });
 
     } catch (error) {
         console.error("❌ Upload error:", error);
         return NextResponse.json({ success: false, error: "File upload failed" }, { status: 500 });
+    } finally {
+        if (connection) connection.release();
+    }
+}
+
+// Delete file by tab name
+export async function DELETE(req: Request) {
+    let connection;
+    try {
+        const { tab_name, ministry, page_type } = await req.json();
+
+        if (!tab_name || !ministry || !page_type) {
+            return NextResponse.json({ success: false, error: "Tab name, ministry, and page type are required" }, { status: 400 });
+        }
+
+        connection = await pool.getConnection();
+        await connection.execute(
+            "DELETE FROM uploaded_files WHERE LOWER(tab_name) = LOWER(?) AND LOWER(ministry) = LOWER(?) AND LOWER(page_type) = LOWER(?)",
+            [tab_name, ministry, page_type]
+        );
+
+        connection.release();
+
+        return NextResponse.json({ success: true });
+
+    } catch (error) {
+        console.error("❌ Delete error:", error);
+        return NextResponse.json({ success: false, error: "Failed to delete file" }, { status: 500 });
     } finally {
         if (connection) connection.release();
     }

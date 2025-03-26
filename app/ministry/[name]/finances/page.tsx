@@ -8,6 +8,8 @@ import { Chart as ChartJS, ArcElement, Tooltip, Legend, BarElement, CategoryScal
 import { Alert, Snackbar, Menu, MenuItem } from "@mui/material";
 import clsx from "clsx";
 import "@/app/globals.css";
+import { useRouter } from "next/navigation"; 
+import { usePathname } from "next/navigation";
 
 ChartJS.register(ArcElement, Tooltip, Legend, BarElement, CategoryScale, LinearScale, LineElement, PointElement);
 
@@ -22,6 +24,8 @@ export default function FinancesTrackingPage() {
     const [switchingView, setSwitchingView] = useState(false);
     const [anchorEl, setAnchorEl] = useState(null);
     const [isFullScreen, setIsFullScreen] = useState(false);
+    const router = useRouter();
+    const pathname = usePathname();
 
     // Function to generate initial data with specified rows and columns
     function generateData(rows, cols) {
@@ -55,8 +59,8 @@ export default function FinancesTrackingPage() {
         const reader = new FileReader();
 
         reader.onload = (e) => {
-            const binaryStr = e.target.result;
-            const workbook = XLSX.read(binaryStr, { type: "binary" });
+            const data = new Uint8Array(e.target.result);
+            const workbook = XLSX.read(data, { type: "array" });
             const firstSheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[firstSheetName];
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
@@ -68,7 +72,7 @@ export default function FinancesTrackingPage() {
             if (!activeChart) {
                 // Generate automatic chart name
                 const nextChartNumber = charts.length + 1;
-                const newChartName = `Finance Chart ${nextChartNumber}`;
+                const newChartName = `Member Chart ${nextChartNumber}`;
                 const newChart = {
                     id: Date.now(),
                     name: newChartName,
@@ -88,7 +92,7 @@ export default function FinancesTrackingPage() {
             setIsLoading(false);
         };
 
-        reader.readAsBinaryString(file);
+        reader.readAsArrayBuffer(file);
     };
 
     const handleSaveClick = (event) => {
@@ -117,13 +121,17 @@ export default function FinancesTrackingPage() {
             const activeChartData = charts.find(chart => chart.id === activeChart);
             if (!activeChartData) return;
     
-            const tabName = prompt("Enter a tab name for this file:");
-            if (!tabName || tabName.trim() === "") {
-                alert("Tab name is required.");
+            const pathSegments = pathname.split('/');
+            const ministry = pathSegments[2] || "defaultMinistry";
+            const pageType = pathSegments[3] || "defaultPageType";
+            const tabName = activeChartData.name; // Use the existing tab name
+    
+            if (!tabName) {
+                alert("❌ Tab name is missing.");
                 return;
             }
     
-            console.log("📤 Uploading file:", activeChartData.name, "Tab:", tabName);
+            console.log("📤 Uploading file for", ministry, "-", pageType, ":", tabName);
     
             const worksheetData = activeChartData.data.map(row => row.map(cell => cell.value));
             const worksheet = XLSX.utils.aoa_to_sheet(worksheetData);
@@ -134,10 +142,12 @@ export default function FinancesTrackingPage() {
             const blob = new Blob([fileBuffer], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
     
             const formData = new FormData();
-            const file = new File([blob], `${activeChartData.name}.xlsx`, { type: blob.type });
+            const file = new File([blob], `${tabName}.xlsx`, { type: blob.type });
     
             formData.append("file", file);
             formData.append("tab_name", tabName);
+            formData.append("ministry", ministry);
+            formData.append("page_type", pageType);
     
             try {
                 const response = await fetch("/api/files", {
@@ -146,50 +156,64 @@ export default function FinancesTrackingPage() {
                 });
     
                 const text = await response.text();
-                console.log("📩 Raw API Response:", text);
+                const result = JSON.parse(text);
     
-                try {
-                    const result = JSON.parse(text);
-                    if (result.success) {
-                        console.log("✅ File uploaded successfully");
-                    } else {
-                        console.error("❌ Upload failed:", result.error);
-                    }
-                } catch (jsonError) {
-                    console.error("❌ Invalid JSON response:", text);
+                if (result.success) {
+                    console.log("✅ File uploaded successfully");
+                    alert("✅ File uploaded successfully!");
+                } else {
+                    console.error("❌ Upload failed:", result.error);
+                    alert("❌ Upload failed! " + result.error);
                 }
             } catch (error) {
                 console.error("❌ Error saving file:", error);
+                alert("❌ Error saving file. See console for details.");
             }
         }
-        handleClose();
-    };  
+    };      
 
     const updateChartData = (chartId, spreadsheetData) => {
-        if (spreadsheetData.length < 2) return;
+        console.log("📊 Received Data in updateChartData:", spreadsheetData);  // Confirm input
+        if (spreadsheetData.length < 2) {
+            console.warn("⚠️ Not enough data to update chart.");
+            return;
+        }
+    
         const labels = spreadsheetData[0].map(cell => cell.value);
-        const datasets = spreadsheetData[0].map((_, colIndex) => {
-            return spreadsheetData.slice(1).reduce((sum, row) => {
+        const datasets = spreadsheetData[0].map((_, colIndex) =>
+            spreadsheetData.slice(1).reduce((sum, row) => {
                 const value = parseFloat(row[colIndex]?.value);
                 return sum + (isNaN(value) ? 0 : value);
-            }, 0);
+            }, 0)
+        );
+    
+        console.log("📈 Labels:", labels);
+        console.log("📊 Datasets:", datasets);
+    
+        setCharts(prevCharts => {
+            console.log("📌 Previous Charts Before Update:", prevCharts); // Debugging previous state
+    
+            const updatedCharts = prevCharts.map(chart =>
+                chart.id === chartId
+                    ? {
+                        ...chart,
+                        chartData: {
+                            labels,
+                            datasets: [{
+                                label: 'Data Representation',
+                                data: datasets,
+                                backgroundColor: ['rgba(255,99,132,0.2)', 'rgba(54,162,235,0.2)', 'rgba(255,206,86,0.2)'],
+                                borderColor: ['rgba(255,99,132,1)', 'rgba(54,162,235,1)', 'rgba(255,206,86,1)'],
+                                borderWidth: 1
+                            }]
+                        }
+                    }
+                    : chart
+            );
+    
+            console.log("✅ Updated Charts:", updatedCharts); // Debugging updated state
+            return updatedCharts;
         });
-
-        setCharts(prevCharts => prevCharts.map(chart =>
-            chart.id === chartId ? {
-                ...chart,
-                chartData: {
-                    labels,
-                    datasets: [{
-                        label: 'Data Representation',
-                        data: datasets,
-                        backgroundColor: ['rgba(255, 99, 132, 0.2)', 'rgba(54, 162, 235, 0.2)', 'rgba(255, 206, 86, 0.2)', 'rgba(75, 192, 192, 0.2)', 'rgba(153, 102, 255, 0.2)', 'rgba(255, 159, 64, 0.2)'],
-                        borderColor: ['rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)', 'rgba(255, 206, 86, 1)', 'rgba(75, 192, 192, 1)', 'rgba(153, 102, 255, 1)', 'rgba(255, 159, 64, 1)'],
-                        borderWidth: 1
-                    }]
-                }
-            } : chart
-        ));
     };
 
     const handleChartTypeChange = (chartId, type) => {
@@ -202,14 +226,136 @@ export default function FinancesTrackingPage() {
         }, 500);
     };
 
-    const deleteChart = (chartId) => {
-        setCharts(charts.filter(chart => chart.id !== chartId));
-        if (activeChart === chartId) {
-            setActiveChart(charts.length > 1 ? charts[0].id : null);
+    const deleteChart = async (chartId, tabName) => {
+        const pathSegments = pathname.split('/');
+        const ministry = pathSegments[2] || "defaultMinistry";
+        const pageType = pathSegments[3] || "defaultPageType";
+    
+        if (!tabName) {
+            alert("❌ Tab name is missing.");
+            return;
+        }
+    
+        try {
+            const response = await fetch("/api/files", {
+                method: "DELETE",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ tab_name: tabName, ministry, page_type: pageType }),
+            });
+    
+            const result = await response.json();
+    
+            if (result.success) {
+                console.log("✅ File deleted successfully");
+    
+                setCharts(prevCharts => {
+                    const updatedCharts = prevCharts.filter(chart => chart.id !== chartId);
+                    
+                    // Ensure we set a new active chart if the deleted chart was active
+                    if (activeChart === chartId) {
+                        setActiveChart(updatedCharts.length > 0 ? updatedCharts[0].id : null);
+                    }
+    
+                    return updatedCharts;
+                });
+    
+            } else {
+                console.error("❌ Delete failed:", result.error);
+                alert("❌ Delete failed! " + result.error);
+            }
+        } catch (error) {
+            console.error("❌ Error deleting file:", error);
+            alert("❌ Error deleting file. See console for details.");
         }
     };
 
-
+    
+    useEffect(() => {
+        console.log("✅ useEffect is running");
+    
+        const pathSegments = pathname.split('/');
+        const ministry = pathSegments[2] || "defaultMinistry";
+        const pageType = pathSegments[3] || "defaultPageType";
+    
+        console.log(`📢 Fetching files for: Ministry = ${ministry}, Page Type = ${pageType}`);
+    
+        fetchStoredFiles(ministry, pageType);
+    }, [router.isReady]);
+    
+    const fetchStoredFiles = async (ministry, pageType) => {
+        const apiURL = `/api/files?ministry=${encodeURIComponent(ministry)}&page_type=${encodeURIComponent(pageType)}`;
+    
+        console.log("🌍 Attempting API request:", apiURL);
+    
+        try {
+            const response = await fetch(apiURL);
+            console.log("📡 Response Status:", response.status);
+    
+            if (!response.ok) {
+                console.error(`❌ API Request Failed: ${response.statusText}`);
+                return;
+            }
+    
+            const result = await response.json();
+            console.log("✅ API Response:", result);
+    
+            if (!result.success || !result.files) {
+                console.warn("⚠️ No valid file data found.");
+                return;
+            }
+    
+            const newCharts = result.files.map((file, index) => {
+                const byteCharacters = atob(file.fileData);
+                const byteArray = new Uint8Array(byteCharacters.length);
+                for (let i = 0; i < byteCharacters.length; i++) {
+                    byteArray[i] = byteCharacters.charCodeAt(i);
+                }
+    
+                const blob = new Blob([byteArray], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" });
+                const fileReader = new FileReader();
+    
+                return new Promise((resolve) => {
+                    fileReader.onload = (e) => {
+                        const data = new Uint8Array(e.target.result);
+                        const workbook = XLSX.read(data, { type: "array" });
+    
+                        if (!workbook.SheetNames.length) {
+                            console.error("❌ No sheets found in workbook.");
+                            return;
+                        }
+    
+                        const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+                        const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+    
+                        const formattedData = jsonData.map(row =>
+                            row.map(cell => ({ value: cell || "" }))
+                        );
+    
+                        resolve({
+                            id: Date.now() + index,
+                            name: file.tabName || `Finance Chart ${index + 1}`,
+                            data: formattedData,
+                            chartType: "pie",
+                            chartData: null,
+                        });
+                    };
+    
+                    fileReader.readAsArrayBuffer(blob);
+                });
+            });
+    
+            const loadedCharts = await Promise.all(newCharts);
+            setCharts(loadedCharts);
+            if (loadedCharts.length > 0) {
+                setActiveChart(loadedCharts[0].id);
+            }
+    
+        } catch (error) {
+            console.error("❌ Error fetching stored files:", error);
+            alert(`Error fetching files: ${error.message}`);
+        }
+    }; 
+    
     const toggleChart = () => {
         if (!activeChart || !charts.find(chart => chart.id === activeChart).data ||
             charts.find(chart => chart.id === activeChart).data.length === 0 ||
@@ -230,96 +376,6 @@ export default function FinancesTrackingPage() {
             <div className="animate-spin rounded-full h-12 w-12 border-t-4 border-blue-500"></div>
         </div>
     );
-
-    useEffect(() => {
-        const fetchStoredFile = async () => {
-            try {
-                const response = await fetch("/api/files");
-                const text = await response.text();
-                console.log("📥 Raw API Response:", text);
-    
-                let result;
-                try {
-                    result = JSON.parse(text);
-                } catch (jsonError) {
-                    console.error("❌ Failed to parse JSON response:", text);
-                    return;
-                }
-    
-                if (!response.ok || !result.success || !result.fileData) {
-                    console.error("❌ Error: No valid file data found in response.");
-                    return;
-                }
-    
-                console.log("✅ File data received:", result.filename, "Tab:", result.tabName);
-    
-                // Decode Base64
-                const byteCharacters = atob(result.fileData);
-                const byteNumbers = new Array(byteCharacters.length);
-                for (let i = 0; i < byteCharacters.length; i++) {
-                    byteNumbers[i] = byteCharacters.charCodeAt(i);
-                }
-                const byteArray = new Uint8Array(byteNumbers);
-                const workbook = XLSX.read(byteArray.buffer, { type: "array" });
-    
-                if (!workbook || workbook.SheetNames.length === 0) {
-                    console.error("❌ No valid sheets found in the file.");
-                    return;
-                }
-    
-                const firstSheetName = workbook.SheetNames[0];
-                const worksheet = workbook.Sheets[firstSheetName];
-    
-                if (!worksheet) {
-                    console.error("❌ Worksheet not found in the file.");
-                    return;
-                }
-    
-                const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-    
-                if (!jsonData || jsonData.length === 0) {
-                    console.warn("⚠️ Warning: The file is empty or contains no valid data.");
-                    return;
-                }
-    
-                // Format data properly
-                const formattedData = jsonData.map(row =>
-                    row.map(cell => ({ value: cell || "" }))
-                );
-    
-                // If there are no active charts, create one for this file
-                if (charts.length === 0 || !activeChart) {
-                    console.log("📊 Creating new chart for loaded file...");
-    
-                    const newChart = {
-                        id: Date.now(),
-                        name: result.tabName || "Loaded Chart",
-                        data: formattedData,
-                        chartType: "pie",
-                        chartData: null,
-                    };
-    
-                    setCharts([...charts, newChart]);
-                    setActiveChart(newChart.id);
-                } else {
-                    // Update existing active chart
-                    setCharts(prevCharts =>
-                        prevCharts.map(chart =>
-                            chart.id === activeChart ? { ...chart, data: formattedData } : chart
-                        )
-                    );
-                }
-    
-                console.log("✅ Successfully loaded spreadsheet data:", formattedData);
-                updateChartData(activeChart, formattedData);
-    
-            } catch (error) {
-                console.error("❌ Error fetching stored file:", error);
-            }
-        };
-    
-        fetchStoredFile();
-    }, []);
 
     // Function to add a new row to the spreadsheet data
     const addRow = () => {
@@ -400,7 +456,7 @@ export default function FinancesTrackingPage() {
                                 className={clsx("p-2 border rounded-md flex items-center mr-2", { "bg-gray-300": activeChart === chart.id })}
                             >
                                 <button onClick={() => setActiveChart(chart.id)} className="mr-2">{chart.name}</button>
-                                <button onClick={() => deleteChart(chart.id)} className="text-blue-500 font-bold text-lg">X</button>
+                                <button onClick={() => deleteChart(chart.id, chart.name)} className="text-blue-500 font-bold text-lg">X</button>                  
                             </div>
                         ))}
                     </div>

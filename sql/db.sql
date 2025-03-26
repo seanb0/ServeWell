@@ -72,7 +72,9 @@ CREATE TABLE uploaded_files (
     file_name TEXT NOT NULL,
     file_data LONGBLOB NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    tab_name VARCHAR(255) NOT NULL
+    tab_name VARCHAR(255) NOT NULL,
+    ministry VARCHAR(255) NOT NULL,
+    page_type VARCHAR(255) NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS media (
@@ -86,6 +88,15 @@ CREATE TABLE IF NOT EXISTS media (
     church_id INT NOT NULL,
     FOREIGN KEY (church_id) REFERENCES church(church_id)
 );
+
+CREATE TABLE calendar_events (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(255) NOT NULL,
+    start DATETIME NOT NULL,
+    ministry VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 
 -- Inserting data into the tables
 
