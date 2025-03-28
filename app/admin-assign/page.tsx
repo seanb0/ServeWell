@@ -47,11 +47,6 @@ export default function AdminAssignPage() {
                     <h2 className="text-2xl font-bold text-white mb-8">Admin Assignment Page</h2>
                 </div>
                 
-                {/* Super Admins List Section */}
-                <div className="container mx-auto px-4 mb-8">
-                    <SuperAdminsList />
-                </div>
-                
                 <div className="items-center justify-center">
                     <table className="table-auto flex-initial w-full bg-white rounded-lg shadow-md">
                         <thead>
