@@ -1,26 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getSession } from '@auth0/nextjs-auth0/edge'
-import  userStuff from '@/app/lib/userstuff'
+import  {userStuff, newUser} from '@/app/lib/userstuff'
+import { insertUser } from '@/app/lib/data'
 
 export async function middleware(req: NextRequest) {
   // try {
-    const res = NextResponse.next()
+  const res = NextResponse.next()
 
-    const session = await getSession(req, res)
-    console.log('User:', session?.user.sub)
+  // retrieve the user 
+  const session = await getSession(req, res)
+  // console.log('User's Auth0 ID:', session?.user.sub)
 
   let auth_ID = session?.user.sub
-  let SuperRole_ID = 2
+  let nickname = session?.user.nickname
+  let email = session?.user.email
+  console.log('Auth0 ID:', session?.user)
+  console.log('Nickname:', nickname)
+  console.log('Email:', email)
+  const existingUserFlag = await newUser(auth_ID);
+  console.log('Flag:', existingUserFlag)
 
+  // if (existingUserFlag == false) {
+  //   console.log('User does not exist')
+  //   const insertion = await insertUser(nickname, auth_ID, email)
+  //   console.log('Insertion:', insertion)
+  // }
   // send post function here to retrieve role id
   const result = await userStuff(auth_ID);
-  console.log('Result:', result[0].Role_ID)
-  const role = result[0].Role_ID
+  console.log('Result:', result[0].rID)
+  const role = result[0]?.rID
   
   // do a check to make sure that the user is a superadmin
-  if (SuperRole_ID === role) {
+  if (role === 2) {
     return NextResponse.next()
-  } else {
+  } else if (role === 0){
     return NextResponse.redirect(new URL('/', req.url))
   }
   // } catch (error) {
@@ -50,5 +63,5 @@ export async function middleware(req: NextRequest) {
 }
 
 export const config = {
-  matcher: ['/super-homepage', '/admin-assign'],
+  matcher: ['/super-homepage', '/admin-assign', '/ministry/:path*'],
 }

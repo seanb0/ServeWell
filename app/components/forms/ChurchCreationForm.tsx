@@ -2,8 +2,10 @@
 import '@/app/globals.css';
 
 import { useState } from 'react';
+import { useUser } from '@auth0/nextjs-auth0/client';
 
 export default function ChurchCreationForm() {
+    const {user} = useUser();
     const [step, setStep] = useState(1);
     const [formData, setFormData] = useState({
         churchName: '',
@@ -118,7 +120,8 @@ export default function ChurchCreationForm() {
             phoneNumber: formData.phoneNumber,
             username: formData.username,
             password: formData.password,
-            church_id: churchId  // Add the stored church_id
+            church_id: churchId,  // Add the stored church_id
+            auth0ID: user?.sub,
         };
 
         console.log('Sending SuperAdmin data:', superAdminData); // Debug log

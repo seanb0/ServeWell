@@ -1,10 +1,11 @@
-import {insertAdmins, verifyAdmin} from '@/app/lib/data';
+import {insertUser, verifyAdmin} from '@/app/lib/data';
 import { NextResponse } from 'next/server';
 
 export async function POST(req) {
     try {
-        const {nickname, auth0_id} = await req.json();
-        const result = await insertAdmins(nickname, auth0_id);
+        const {nickname, auth0_id, email} = await req.json();
+        // console.log('User:', nickname, auth0_id, email);
+        const result = await insertUser(nickname, auth0_id, email);
         return NextResponse.json({ success: true });
     } catch(error) {
         console.error('Detailed error:', error);
